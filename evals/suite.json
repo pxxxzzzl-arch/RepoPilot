@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "tasks": [
+    {"id": "divide", "repository": "tasks/divide", "issue": "divide should return the quotient, not the product", "allowed_files": ["calculator.py"], "test_path": "tests"},
+    {"id": "add", "repository": "tasks/add", "issue": "add should return the sum of its arguments", "allowed_files": ["arithmetic.py"], "test_path": "tests"},
+    {"id": "is_even", "repository": "tasks/is_even", "issue": "is_even should be true for even integers", "allowed_files": ["number_utils.py"], "test_path": "tests"},
+    {"id": "clamp", "repository": "tasks/clamp", "issue": "clamp should constrain values to the inclusive lower and upper bounds", "allowed_files": ["bounds.py"], "test_path": "tests"},
+    {"id": "normalize", "repository": "tasks/normalize", "issue": "normalize should trim surrounding whitespace and lowercase text", "allowed_files": ["text.py"], "test_path": "tests"},
+    {"id": "mean", "repository": "tasks/mean", "issue": "mean should return the arithmetic average", "allowed_files": ["stats_utils.py"], "test_path": "tests"},
+    {"id": "fahrenheit", "repository": "tasks/fahrenheit", "issue": "celsius_to_fahrenheit uses the wrong offset sign", "allowed_files": ["temperature.py"], "test_path": "tests"},
+    {"id": "contains_ci", "repository": "tasks/contains_ci", "issue": "contains_case_insensitive should ignore case in both strings", "allowed_files": ["search.py"], "test_path": "tests"},
+    {"id": "safe_index", "repository": "tasks/safe_index", "issue": "safe_index should return the default when index equals the sequence length", "allowed_files": ["sequences.py"], "test_path": "tests"},
+    {"id": "unique_order", "repository": "tasks/unique_order", "issue": "unique_preserving_order should remove duplicates without sorting", "allowed_files": ["collections_utils.py"], "test_path": "tests"}
+  ]
+}

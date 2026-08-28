@@ -1,6 +1,6 @@
 # Issue2Patch
 
-Issue2Patch 是一个面向“从 Issue 到补丁”流程的 Python CLI 项目。当前完成到第六阶段：在可审计的安全工具、Docker 测试沙箱和供应商无关编排器之上，接入真实 Responses API 模型客户端与人工批准 CLI。
+Issue2Patch 是一个面向“从 Issue 到补丁”流程的 Python CLI 项目。当前完成到第七阶段：在可审计的安全工具、Docker 测试沙箱、供应商无关编排器和真实模型 CLI 之上，增加可重复的 Agent 评测系统。
 
 ## 当前范围
 
@@ -25,6 +25,9 @@ Issue2Patch 是一个面向“从 Issue 到补丁”流程的 Python CLI 项目�
 - API Key 只能从 `OPENAI_API_KEY` 环境变量读取，不接受命令行参数；请求具有超时、有限重试和指数退避。
 - 最终结果统计模型请求、重试、输入/缓存/输出 token、模型耗时和估算费用。
 - `issue2patch run` 在执行前要求独立人工批准，实时状态写入 stderr，stdout 最终只输出临时副本的 unified diff。
+- `issue2patch eval` 读取固定评测集，默认对每个任务独立运行 3 次，并生成机器可读 JSON 与求职作品集可直接展示的 Markdown 报告。
+- 内置 `evals/suite.json` 包含 10 个始终保持故障的小型 Python 任务；每次运行都使用全新模型客户端和 Agent 临时副本。
+- 评测统计严格修复成功率、测试通过率、非相关文件修改数、平均工具调用数、Token、耗时和费用，以及超时、补丁冲突、安全拦截和各类终止状态。
 - `demo_repo` 的 `divide()` 已通过第三阶段工具从乘法安全修改为除法。
 - 暂不包含网页、Docker 构建自动化或 GitHub API；也不会自动修改原仓库、提交或创建 PR。
 
@@ -71,6 +74,29 @@ issue2patch run \
 进度、终止状态和用量统计写入 stderr；stdout 仅输出临时副本相对初始状态的 unified diff，因此可以安全重定向到补丁文件。命令不会把 Diff 应用到原仓库。
 
 默认模型为 `gpt-5.6-luna`。可通过 `--model` 指定其他模型；未知模型仍统计 token，但费用显示为不可用。正则搜索仍需额外传入 `--allow-regex-search`。
+
+## 运行 Agent Evals
+
+内置评测集包含 10 个固定故障任务。默认每个任务运行 3 次，共 30 次 Agent 运行：
+
+```bash
+issue2patch eval \
+  --suite evals/suite.json \
+  --runs 3 \
+  --output eval-results
+```
+
+评测会显示任务数、总运行次数、模型与报告目录，并要求独立人工批准。CI 或明确的非交互执行可传入 `--approve`。默认使用 Docker 沙箱与真实 Responses API，因此需要预先构建沙箱镜像并设置 `OPENAI_API_KEY`。
+
+输出目录中的 `eval-report.json` 保留每次运行与每个任务的结构化指标；`eval-report.md` 提供汇总表和失败分布。报告不写入源码、Diff、API Key 或隐藏推理。
+
+“修复成功”采用严格口径：Agent 必须以 `SUCCESS` 结束、目标测试通过、传入的原仓库完全不变，且 Diff 不能包含任务 `allowed_files` 白名单之外的文件。“测试通过率”单独统计，便于识别“测试绿了但修改范围不合格”的运行。
+
+评测单元测使用 `ScriptedModel` 和可信本地测试适配器，不联网、不产生 API 费用：
+
+```bash
+pytest tests/test_evals.py tests/test_cli.py
+```
 
 ## 构建测试沙箱镜像
 

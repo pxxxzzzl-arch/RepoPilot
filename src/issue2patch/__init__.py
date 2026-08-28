@@ -36,6 +36,19 @@ from issue2patch.models import (
     ModelTransportError,
     OpenAIResponsesModelClient,
 )
+from issue2patch.evals import (
+    DEFAULT_EVAL_RUNS,
+    EvalAggregate,
+    EvalReport,
+    EvalRunRecord,
+    EvalRunner,
+    EvalTask,
+    EvalTaskSummary,
+    EvalValidationError,
+    load_eval_suite,
+    render_markdown_report,
+    write_eval_reports,
+)
 from issue2patch.sandbox import DockerSandboxRunner, SandboxResult
 from issue2patch.trace import TraceRecorder
 
@@ -66,6 +79,17 @@ __all__ = [
     "ModelClientError",
     "ModelTransportError",
     "OpenAIResponsesModelClient",
+    "DEFAULT_EVAL_RUNS",
+    "EvalAggregate",
+    "EvalReport",
+    "EvalRunRecord",
+    "EvalRunner",
+    "EvalTask",
+    "EvalTaskSummary",
+    "EvalValidationError",
+    "load_eval_suite",
+    "render_markdown_report",
+    "write_eval_reports",
     "PatchAction",
     "ReadFileAction",
     "RunTestsAction",

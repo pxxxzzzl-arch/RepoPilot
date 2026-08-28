@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from io import StringIO
 from pathlib import Path
 
@@ -154,3 +155,61 @@ def test_missing_environment_api_key_fails_before_execution(
 
     assert exit_code == 2
     assert "OPENAI_API_KEY is not set" in stderr.getvalue()
+
+
+def test_eval_cli_runs_repeated_suite_and_writes_both_reports(
+    broken_repository: tuple[Path, str], tmp_path: Path
+) -> None:
+    repository, before = broken_repository
+    suite = tmp_path / "suite.json"
+    suite.write_text(json.dumps({
+        "version": 1,
+        "tasks": [{
+            "id": "divide",
+            "repository": repository.name,
+            "issue": "divide should return quotient",
+            "allowed_files": ["calculator.py"],
+            "test_path": "tests",
+        }],
+    }), encoding="utf-8")
+    operation = PatchOperation(
+        path="calculator.py",
+        old_content="return a * b",
+        new_content="return a / b",
+        expected_sha256=hashlib.sha256(before.encode()).hexdigest(),
+    )
+    output = tmp_path / "reports"
+    stderr = StringIO()
+
+    def model_factory(task: object, run_number: int, args: object):
+        del task, run_number, args
+        return ScriptedModel([
+            PatchAction((operation,)),
+            RunTestsAction(),
+            FinishAction("fixed"),
+        ])
+
+    exit_code = main(
+        [
+            "eval",
+            "--suite", str(suite),
+            "--runs", "2",
+            "--output", str(output),
+            "--approve",
+        ],
+        stdin=StringIO(""),
+        stdout=StringIO(),
+        stderr=stderr,
+        eval_model_factory=model_factory,
+        test_runner=ContentRunner(),
+    )
+
+    assert exit_code == 0
+    assert (output / "eval-report.json").exists()
+    assert (output / "eval-report.md").exists()
+    report = json.loads((output / "eval-report.json").read_text(encoding="utf-8"))
+    assert report["aggregate"]["total_runs"] == 2
+    assert report["aggregate"]["repair_success_rate"] == 1.0
+    assert "total runs: 2" in stderr.getvalue()
+    assert "Eval complete" in stderr.getvalue()
+    assert (repository / "calculator.py").read_text(encoding="utf-8") == before
