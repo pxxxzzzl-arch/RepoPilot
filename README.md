@@ -122,6 +122,13 @@ ISSUE2PATCH_RUN_LIVE_API=1 pytest tests/test_live_api_smoke.py
 
 Normal GitHub Actions never provide an API key or enable paid tests. CI covers Python 3.10–3.12, package build/metadata checks, and Docker image construction.
 
+Credentialed evaluation is isolated in the manually dispatched **Live Agent
+Evaluation** workflow. Add `OPENAI_API_KEY` as a repository Actions secret, choose
+the model and run count, then explicitly decide whether successful reports and E2E
+evidence should be committed to `main`. The secret is never accepted as workflow
+input, printed, uploaded, or written to a report; ordinary pushes cannot trigger
+this paid workflow.
+
 ## Project map
 
 | Path | Responsibility |
