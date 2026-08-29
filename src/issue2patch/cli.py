@@ -36,7 +36,9 @@ from issue2patch.trace import TraceRecorder
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="issue2patch",
-        description="Turn an issue into an auditable patch in a temporary copy.",
+        description=(
+            "RepoPilot: turn an issue into an auditable patch in a temporary copy."
+        ),
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
@@ -239,7 +241,10 @@ def _run_eval(
             progress_callback=_eval_progress_printer(stderr),
         )
         report = runner.run(
-            tasks, runs_per_task=args.runs, suite_path=args.suite
+            tasks,
+            runs_per_task=args.runs,
+            suite_path=args.suite,
+            model_name=args.model,
         )
         json_path, markdown_path = write_eval_reports(report, args.output)
     except (EvalValidationError, ModelClientError, OSError, ValueError) as error:

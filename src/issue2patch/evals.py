@@ -114,6 +114,7 @@ class EvalAggregate:
 class EvalReport:
     generated_at: str
     suite_path: str
+    model: str
     runs_per_task: int
     records: tuple[EvalRunRecord, ...]
     tasks: tuple[EvalTaskSummary, ...]
@@ -212,6 +213,7 @@ class EvalRunner:
         *,
         runs_per_task: int = DEFAULT_EVAL_RUNS,
         suite_path: str | Path = "",
+        model_name: str = "",
     ) -> EvalReport:
         if not tasks:
             raise ValueError("at least one eval task is required")
@@ -282,6 +284,7 @@ class EvalRunner:
         return EvalReport(
             generated_at=datetime.now(timezone.utc).isoformat(),
             suite_path=str(Path(suite_path)) if suite_path else "",
+            model=model_name,
             runs_per_task=runs_per_task,
             records=tuple(records),
             tasks=summaries,
@@ -313,9 +316,10 @@ def render_markdown_report(report: EvalReport) -> str:
     aggregate = report.aggregate
     cost = "n/a" if aggregate.total_cost_usd is None else f"${aggregate.total_cost_usd:.6f}"
     lines = [
-        "# Issue2Patch Agent Eval Report",
+        "# RepoPilot Agent Eval Report",
         "",
         f"Generated: `{report.generated_at}`  ",
+        f"Model: `{report.model or 'unspecified'}`  ",
         f"Tasks: **{aggregate.task_count}** · Runs per task: **{report.runs_per_task}** · Total runs: **{aggregate.total_runs}**",
         "",
         "## Overall",
@@ -351,6 +355,21 @@ def render_markdown_report(report: EvalReport) -> str:
     lines.extend(["", "## Termination reasons", ""])
     for status, count in sorted(aggregate.termination_counts.items()):
         lines.append(f"- `{status}`: {count}")
+    failures = [record for record in report.records if not record.repair_success]
+    lines.extend(["", "## Representative failures", ""])
+    if failures:
+        lines.extend([
+            "| Task | Run | Status | Error summary |",
+            "|---|---:|---|---|",
+        ])
+        for record in failures[:5]:
+            summary = _markdown_cell(record.error_summary or "No error summary")
+            lines.append(
+                f"| {_markdown_cell(record.task_id)} | {record.run_number} | "
+                f"`{_markdown_cell(record.status)}` | {summary} |"
+            )
+    else:
+        lines.append("No failed runs.")
     return "\n".join(lines) + "\n"
 
 
@@ -504,6 +523,10 @@ def _rate(numerator: int, denominator: int) -> float:
 
 def _percent(value: float) -> str:
     return f"{value * 100:.1f}%"
+
+
+def _markdown_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("`", "\\`")
 
 
 __all__ = [

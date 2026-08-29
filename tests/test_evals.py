@@ -22,6 +22,7 @@ from issue2patch import (
     RunTestsAction,
     ScriptedModel,
     load_eval_suite,
+    render_markdown_report,
     write_eval_reports,
 )
 from issue2patch.sandbox import SandboxResult
@@ -119,7 +120,12 @@ def test_eval_runner_repeats_three_times_and_aggregates_success(
         test_runner_factory=TrustedRunnerAdapter,
     )
 
-    report = runner.run([eval_task], runs_per_task=3, suite_path="suite.json")
+    report = runner.run(
+        [eval_task],
+        runs_per_task=3,
+        suite_path="suite.json",
+        model_name="scripted-test",
+    )
     json_path, markdown_path = write_eval_reports(report, tmp_path / "reports")
 
     assert report.aggregate.total_runs == 3
@@ -132,6 +138,7 @@ def test_eval_runner_repeats_three_times_and_aggregates_success(
     assert all(record.original_unchanged for record in report.records)
     assert (eval_task.repository / "calculator.py").read_bytes() == original
     decoded = json.loads(json_path.read_text(encoding="utf-8"))
+    assert decoded["model"] == "scripted-test"
     assert decoded["aggregate"]["repair_success_rate"] == 1.0
     markdown = markdown_path.read_text(encoding="utf-8")
     assert "Repair success rate | 100.0%" in markdown
@@ -234,3 +241,6 @@ def test_eval_counts_timeout_patch_conflict_and_security_blocks(
     assert timeout_report.aggregate.timeout_count == 1
     assert conflict_report.aggregate.patch_conflict_count == 1
     assert security_report.aggregate.security_block_count == 1
+    markdown = render_markdown_report(conflict_report)
+    assert "## Representative failures" in markdown
+    assert "| divide | 1 | `patch_conflict` |" in markdown
