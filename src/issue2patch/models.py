@@ -8,7 +8,9 @@ import socket
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import asdict
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Mapping, Protocol
 
@@ -30,13 +32,29 @@ DEFAULT_OPENAI_TIMEOUT = 30.0
 DEFAULT_OPENAI_MAX_RETRIES = 2
 DEFAULT_OPENAI_MAX_OUTPUT_TOKENS = 2_000
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
+DEFAULT_DEEPSEEK_TIMEOUT = 30.0
+DEFAULT_DEEPSEEK_MAX_RETRIES = 2
+DEFAULT_DEEPSEEK_MAX_OUTPUT_TOKENS = 2_000
+DEEPSEEK_RESPONSES_URL = "https://api.deepseek.com/responses"
 
 # USD per one million tokens: input, cached input, output.
-_MODEL_PRICING = {
+_OPENAI_MODEL_PRICING = {
     "gpt-5.6-luna": (0.20, 0.02, 1.20),
     "gpt-5.6-terra": (2.00, 0.20, 12.00),
     "gpt-5.6-sol": (4.00, 0.40, 20.00),
     "gpt-5.6": (4.00, 0.40, 20.00),
+}
+
+# DeepSeek prices verified from the official pricing page on 2026-09-06.
+# Each value contains off-peak and peak (input, cached input, output) rates.
+_DEEPSEEK_MODEL_PRICING = {
+    "deepseek-v4-flash": ((0.22, 0.007, 0.66), (0.44, 0.014, 1.32)),
+    "deepseek-v4-pro": ((0.66, 0.022, 1.98), (1.32, 0.044, 3.96)),
+    "deepseek-v4-flash-vision-exp": (
+        (0.22, 0.007, 0.66),
+        (0.44, 0.014, 1.32),
+    ),
 }
 
 
@@ -45,7 +63,7 @@ class ModelClientError(RuntimeError):
 
 
 class MissingAPIKeyError(ModelClientError):
-    """Raised when OPENAI_API_KEY is absent."""
+    """Raised when the selected provider's API key is absent."""
 
 
 class InvalidModelOutputError(InvalidModelActionError, ModelClientError):
@@ -94,41 +112,49 @@ class UrllibResponsesTransport:
             detail = error.read(1_000).decode("utf-8", errors="replace")
             retryable = error.code in {408, 409, 429} or error.code >= 500
             raise ModelTransportError(
-                f"OpenAI API HTTP {error.code}: {detail}", retryable=retryable
+                f"model API HTTP {error.code}: {detail}", retryable=retryable
             ) from error
         except (urllib.error.URLError, TimeoutError, socket.timeout) as error:
             raise ModelTransportError(
-                f"OpenAI API connection failed: {error}", retryable=True
+                f"model API connection failed: {error}", retryable=True
             ) from error
         try:
             decoded = json.loads(raw)
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ModelTransportError(
-                "OpenAI API returned invalid JSON", retryable=False
+                "model API returned invalid JSON", retryable=False
             ) from error
         if not isinstance(decoded, dict):
             raise ModelTransportError(
-                "OpenAI API returned a non-object response", retryable=False
+                "model API returned a non-object response", retryable=False
             )
         return decoded
 
 
-class OpenAIResponsesModelClient:
-    """Map strict Responses API JSON output into the existing action union."""
+class _ResponsesModelClient:
+    """Shared fail-closed client for OpenAI-compatible Responses APIs."""
 
     def __init__(
         self,
         *,
-        model: str = DEFAULT_OPENAI_MODEL,
-        timeout: float = DEFAULT_OPENAI_TIMEOUT,
-        max_retries: int = DEFAULT_OPENAI_MAX_RETRIES,
-        max_output_tokens: int = DEFAULT_OPENAI_MAX_OUTPUT_TOKENS,
+        provider_name: str,
+        api_key_env: str,
+        response_url: str,
+        model: str,
+        timeout: float,
+        max_retries: int,
+        max_output_tokens: int,
+        strict_schema: bool,
+        pricing_resolver: Callable[
+            [str, datetime], tuple[float, float, float] | None
+        ],
         transport: ResponsesTransport | None = None,
         sleeper: Any = time.sleep,
+        utc_now: Callable[[], datetime] | None = None,
     ) -> None:
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = os.environ.get(api_key_env)
         if not api_key:
-            raise MissingAPIKeyError("OPENAI_API_KEY is not set")
+            raise MissingAPIKeyError(f"{api_key_env} is not set")
         if not model.strip():
             raise ValueError("model must not be empty")
         if timeout <= 0:
@@ -144,8 +170,15 @@ class OpenAIResponsesModelClient:
         self._transport = transport or UrllibResponsesTransport()
         self._sleeper = sleeper
         self._api_key = api_key
+        self._provider_name = provider_name
+        self._response_url = response_url
+        self._strict_schema = strict_schema
+        self._pricing_resolver = pricing_resolver
+        self._utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self._usage = ModelUsage(
-            estimated_cost_usd=0.0 if model in _MODEL_PRICING else None
+            estimated_cost_usd=(
+                0.0 if pricing_resolver(model, self._utc_now()) is not None else None
+            )
         )
 
     @property
@@ -153,18 +186,18 @@ class OpenAIResponsesModelClient:
         return self._usage
 
     def next_action(self, context: AgentContext) -> AgentAction:
+        text_format: dict[str, object] = {
+            "type": "json_schema",
+            "name": "issue2patch_action",
+            "schema": _ACTION_SCHEMA,
+        }
+        if self._strict_schema:
+            text_format["strict"] = True
         payload = {
             "model": self.model,
             "instructions": _AGENT_INSTRUCTIONS,
             "input": self._context_input(context),
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "issue2patch_action",
-                    "strict": True,
-                    "schema": _ACTION_SCHEMA,
-                }
-            },
+            "text": {"format": text_format},
             "reasoning": {"effort": "low"},
             "max_output_tokens": self.max_output_tokens,
             "store": False,
@@ -174,7 +207,7 @@ class OpenAIResponsesModelClient:
         for attempt in range(self.max_retries + 1):
             try:
                 response = self._transport.send(
-                    url=OPENAI_RESPONSES_URL,
+                    url=self._response_url,
                     headers={
                         "Authorization": f"Bearer {self._api_key}",
                         "Content-Type": "application/json",
@@ -196,7 +229,8 @@ class OpenAIResponsesModelClient:
         self._record_response_usage(response, duration, retries)
         if response.get("status", "completed") != "completed":
             raise ModelClientError(
-                f"OpenAI response did not complete: {response.get('status')}"
+                f"{self._provider_name} response did not complete: "
+                f"{response.get('status')}"
             )
         output_text = self._extract_output_text(response)
         try:
@@ -269,8 +303,16 @@ class OpenAIResponsesModelClient:
         aggregate_input = self._usage.input_tokens + input_tokens
         aggregate_cached = self._usage.cached_input_tokens + cached_tokens
         aggregate_output = self._usage.output_tokens + output_tokens
-        cost = _estimate_cost(
-            self.model, aggregate_input, aggregate_cached, aggregate_output
+        request_cost = _estimate_cost(
+            self._pricing_resolver(self.model, self._utc_now()),
+            input_tokens,
+            cached_tokens,
+            output_tokens,
+        )
+        cost = (
+            self._usage.estimated_cost_usd + request_cost
+            if self._usage.estimated_cost_usd is not None and request_cost is not None
+            else None
         )
         self._usage = ModelUsage(
             request_count=self._usage.request_count + 1,
@@ -281,6 +323,64 @@ class OpenAIResponsesModelClient:
             total_tokens=self._usage.total_tokens + total_tokens,
             duration_seconds=self._usage.duration_seconds + duration,
             estimated_cost_usd=cost,
+        )
+
+
+class OpenAIResponsesModelClient(_ResponsesModelClient):
+    """Map strict OpenAI Responses API output into the existing action union."""
+
+    def __init__(
+        self,
+        *,
+        model: str = DEFAULT_OPENAI_MODEL,
+        timeout: float = DEFAULT_OPENAI_TIMEOUT,
+        max_retries: int = DEFAULT_OPENAI_MAX_RETRIES,
+        max_output_tokens: int = DEFAULT_OPENAI_MAX_OUTPUT_TOKENS,
+        transport: ResponsesTransport | None = None,
+        sleeper: Any = time.sleep,
+    ) -> None:
+        super().__init__(
+            provider_name="OpenAI",
+            api_key_env="OPENAI_API_KEY",
+            response_url=OPENAI_RESPONSES_URL,
+            model=model,
+            timeout=timeout,
+            max_retries=max_retries,
+            max_output_tokens=max_output_tokens,
+            strict_schema=True,
+            pricing_resolver=_openai_pricing,
+            transport=transport,
+            sleeper=sleeper,
+        )
+
+
+class DeepSeekResponsesModelClient(_ResponsesModelClient):
+    """Map DeepSeek's Responses API JSON output into the safe action union."""
+
+    def __init__(
+        self,
+        *,
+        model: str = DEFAULT_DEEPSEEK_MODEL,
+        timeout: float = DEFAULT_DEEPSEEK_TIMEOUT,
+        max_retries: int = DEFAULT_DEEPSEEK_MAX_RETRIES,
+        max_output_tokens: int = DEFAULT_DEEPSEEK_MAX_OUTPUT_TOKENS,
+        transport: ResponsesTransport | None = None,
+        sleeper: Any = time.sleep,
+        utc_now: Callable[[], datetime] | None = None,
+    ) -> None:
+        super().__init__(
+            provider_name="DeepSeek",
+            api_key_env="DEEPSEEK_API_KEY",
+            response_url=DEEPSEEK_RESPONSES_URL,
+            model=model,
+            timeout=timeout,
+            max_retries=max_retries,
+            max_output_tokens=max_output_tokens,
+            strict_schema=False,
+            pricing_resolver=_deepseek_pricing,
+            transport=transport,
+            sleeper=sleeper,
+            utc_now=utc_now,
         )
 
 
@@ -359,10 +459,33 @@ def _nonnegative_int(value: object, *, default: int = 0) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else default
 
 
+def _openai_pricing(
+    model: str, _: datetime
+) -> tuple[float, float, float] | None:
+    return _OPENAI_MODEL_PRICING.get(model)
+
+
+def _deepseek_pricing(
+    model: str, when: datetime
+) -> tuple[float, float, float] | None:
+    rates = _DEEPSEEK_MODEL_PRICING.get(model)
+    if rates is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    utc = when.astimezone(timezone.utc)
+    is_weekday = utc.weekday() < 5
+    is_peak_hour = 1 <= utc.hour < 4 or 6 <= utc.hour < 10
+    off_peak, peak = rates
+    return peak if is_weekday and is_peak_hour else off_peak
+
+
 def _estimate_cost(
-    model: str, input_tokens: int, cached_tokens: int, output_tokens: int
+    pricing: tuple[float, float, float] | None,
+    input_tokens: int,
+    cached_tokens: int,
+    output_tokens: int,
 ) -> float | None:
-    pricing = _MODEL_PRICING.get(model)
     if pricing is None:
         return None
     input_rate, cached_rate, output_rate = pricing
@@ -454,7 +577,10 @@ _ACTION_SCHEMA = {
 
 
 __all__ = [
+    "DEFAULT_DEEPSEEK_MODEL",
     "DEFAULT_OPENAI_MODEL",
+    "DEEPSEEK_RESPONSES_URL",
+    "DeepSeekResponsesModelClient",
     "InvalidModelOutputError",
     "MissingAPIKeyError",
     "ModelClientError",

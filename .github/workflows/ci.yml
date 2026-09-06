@@ -9,6 +9,7 @@ permissions:
 
 env:
   ISSUE2PATCH_RUN_LIVE_API: "0"
+  ISSUE2PATCH_RUN_DEEPSEEK_LIVE_API: "0"
 
 jobs:
   test:

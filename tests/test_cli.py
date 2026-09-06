@@ -157,6 +157,37 @@ def test_missing_environment_api_key_fails_before_execution(
     assert "OPENAI_API_KEY is not set" in stderr.getvalue()
 
 
+def test_deepseek_provider_uses_deepseek_key_and_default_model(
+    broken_repository: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository, _ = broken_repository
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-be-reused")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    stderr = StringIO()
+
+    exit_code = main(
+        [
+            "run",
+            "--repo",
+            str(repository),
+            "--issue",
+            "fix divide",
+            "--provider",
+            "deepseek",
+            "--approve",
+        ],
+        stdin=StringIO(""),
+        stdout=StringIO(),
+        stderr=stderr,
+    )
+
+    assert exit_code == 2
+    output = stderr.getvalue()
+    assert "provider: deepseek" in output
+    assert "model: deepseek-v4-flash" in output
+    assert "DEEPSEEK_API_KEY is not set" in output
+
+
 def test_eval_cli_runs_repeated_suite_and_writes_both_reports(
     broken_repository: tuple[Path, str], tmp_path: Path
 ) -> None:

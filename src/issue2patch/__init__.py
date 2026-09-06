@@ -29,7 +29,9 @@ from issue2patch.orchestrator import (
     TestRunSummary,
 )
 from issue2patch.models import (
+    DEFAULT_DEEPSEEK_MODEL,
     DEFAULT_OPENAI_MODEL,
+    DeepSeekResponsesModelClient,
     InvalidModelOutputError,
     MissingAPIKeyError,
     ModelClientError,
@@ -73,7 +75,9 @@ __all__ = [
     "InvalidModelActionError",
     "ModelClient",
     "ModelUsage",
+    "DEFAULT_DEEPSEEK_MODEL",
     "DEFAULT_OPENAI_MODEL",
+    "DeepSeekResponsesModelClient",
     "InvalidModelOutputError",
     "MissingAPIKeyError",
     "ModelClientError",

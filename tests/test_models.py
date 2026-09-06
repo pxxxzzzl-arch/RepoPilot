@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
 
 from issue2patch import AgentContext, PatchAction, SearchAction
 from issue2patch.models import (
+    DEEPSEEK_RESPONSES_URL,
+    DeepSeekResponsesModelClient,
     InvalidModelOutputError,
     MissingAPIKeyError,
     ModelTransportError,
@@ -78,6 +81,16 @@ def test_api_key_is_required_from_environment(monkeypatch: pytest.MonkeyPatch) -
         OpenAIResponsesModelClient(transport=MockTransport([]))
 
 
+def test_deepseek_requires_its_own_environment_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-be-reused")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    with pytest.raises(MissingAPIKeyError, match="DEEPSEEK_API_KEY"):
+        DeepSeekResponsesModelClient(transport=MockTransport([]))
+
+
 def test_mock_api_maps_strict_structured_output_and_sends_schema(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -101,6 +114,69 @@ def test_mock_api_maps_strict_structured_output_and_sends_schema(
     assert schema["type"] == "object"
     assert "oneOf" not in schema
     assert "anyOf" in schema["properties"]["action"]
+
+
+def test_deepseek_uses_its_endpoint_key_and_structured_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek-test-only")
+    transport = MockTransport(
+        [_response({"type": "read_file", "path": "calculator.py"})]
+    )
+    client = DeepSeekResponsesModelClient(transport=transport, timeout=8.0)
+
+    action = client.next_action(_context())
+
+    assert action.path == "calculator.py"
+    request = transport.calls[0]
+    assert request["url"] == DEEPSEEK_RESPONSES_URL
+    assert request["timeout"] == 8.0
+    assert request["headers"] == {
+        "Authorization": "Bearer sk-deepseek-test-only",
+        "Content-Type": "application/json",
+    }
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    assert payload["model"] == "deepseek-v4-flash"
+    text_format = payload["text"]["format"]  # type: ignore[index]
+    assert text_format["type"] == "json_schema"
+    assert "strict" not in text_format
+    assert text_format["schema"]["type"] == "object"
+
+
+@pytest.mark.parametrize(
+    ("hour", "expected_cost"),
+    [
+        (2, 0.0004868),
+        (5, 0.0002434),
+    ],
+)
+def test_deepseek_cost_uses_current_peak_or_off_peak_rates(
+    monkeypatch: pytest.MonkeyPatch, hour: int, expected_cost: float
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek-test-only")
+    transport = MockTransport([_response({"type": "finish", "summary": "done"})])
+    client = DeepSeekResponsesModelClient(
+        transport=transport,
+        utc_now=lambda: datetime(2026, 9, 7, hour, tzinfo=timezone.utc),
+    )
+
+    client.next_action(_context())
+
+    assert client.usage.estimated_cost_usd == pytest.approx(expected_cost)
+
+
+def test_deepseek_invalid_output_is_rejected_before_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek-test-only")
+    transport = MockTransport(
+        [{"status": "completed", "output_text": '{"action":{"type":"shell"}}'}]
+    )
+    client = DeepSeekResponsesModelClient(transport=transport)
+
+    with pytest.raises(InvalidModelOutputError, match="unsupported model action"):
+        client.next_action(_context())
 
 
 def test_usage_duration_and_luna_cost_are_accumulated(

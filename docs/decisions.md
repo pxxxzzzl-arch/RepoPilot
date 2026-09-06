@@ -37,3 +37,9 @@ This lightweight decision log records choices that define RepoPilot's safety and
 **Decision:** a repair succeeds only when the Agent terminates successfully, tests pass, the source repository is unchanged, and the diff touches only the task allowlist.
 
 **Why:** test pass rate alone can hide unrelated or unsafe modifications.
+
+## D007 — Explicit provider and isolated credentials
+
+**Decision:** the CLI selects `openai` or `deepseek` explicitly. Each client reads only its provider-specific environment variable and uses a fixed HTTPS endpoint.
+
+**Why:** credentials cannot be mistaken for one another, API keys never become command-line arguments, and adding a provider does not weaken the shared structured-action validation.

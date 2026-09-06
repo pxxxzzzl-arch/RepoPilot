@@ -37,7 +37,7 @@ flowchart LR
 | Filesystem | Repository-relative paths only; absolute paths, `..`, and symlink escapes are rejected |
 | Modification | Expected hash, sensitive-file blocklist, byte/operation limits, full preflight, atomic replacement |
 | Test execution | Docker is the default for untrusted code; network and privilege escalation are disabled |
-| Secrets | API key comes only from `OPENAI_API_KEY`; traces omit source, environment, and hidden reasoning |
+| Secrets | The selected provider reads only `OPENAI_API_KEY` or `DEEPSEEK_API_KEY`; traces omit source, environment, and hidden reasoning |
 | Source repository | Agent tools receive a temporary copy; only its final diff is returned |
 
 The trusted local test runner deliberately sits outside the untrusted-code boundary and is named accordingly.

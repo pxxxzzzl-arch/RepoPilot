@@ -3,10 +3,18 @@ name: Live Agent Evaluation
 on:
   workflow_dispatch:
     inputs:
-      model:
-        description: OpenAI model ID recorded in the report
+      provider:
+        description: Model API provider
         required: true
-        default: gpt-5.6-luna
+        default: openai
+        type: choice
+        options:
+          - openai
+          - deepseek
+      model:
+        description: Optional model ID; blank selects the provider default
+        required: false
+        default: ""
         type: string
       runs:
         description: Runs per task (10 tasks; 3 means 30 paid Agent runs)
@@ -35,9 +43,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+      DEEPSEEK_API_KEY: ${{ inputs.provider == 'deepseek' && secrets.DEEPSEEK_API_KEY || '' }}
       ISSUE2PATCH_RUN_LIVE_API: "0"
-      MODEL: ${{ inputs.model }}
+      PROVIDER: ${{ inputs.provider }}
+      REQUESTED_MODEL: ${{ inputs.model }}
       RUNS: ${{ inputs.runs }}
     steps:
       - uses: actions/checkout@v6
@@ -47,13 +57,32 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Require the repository API secret
+      - name: Resolve provider model and require its repository secret
         shell: bash
         run: |
-          if [[ -z "$OPENAI_API_KEY" ]]; then
-            echo "Repository secret OPENAI_API_KEY is not configured." >&2
+          case "$PROVIDER" in
+            deepseek)
+              secret="$DEEPSEEK_API_KEY"
+              default_model="deepseek-v4-flash"
+              secret_name="DEEPSEEK_API_KEY"
+              ;;
+            openai)
+              secret="$OPENAI_API_KEY"
+              default_model="gpt-5.6-luna"
+              secret_name="OPENAI_API_KEY"
+              ;;
+            *)
+              echo "Unsupported provider: $PROVIDER" >&2
+              exit 2
+              ;;
+          esac
+          if [[ -z "$secret" ]]; then
+            echo "Repository secret $secret_name is not configured." >&2
             exit 2
           fi
+          model="${REQUESTED_MODEL:-$default_model}"
+          echo "MODEL=$model" >> "$GITHUB_ENV"
+          echo "Using provider=$PROVIDER model=$model"
       - name: Install RepoPilot
         run: python -m pip install -e ".[dev]"
       - name: Build the locked-down sandbox image
@@ -78,6 +107,7 @@ jobs:
           issue2patch run \
             --repo "$workdir" \
             --issue "divide should return quotient" \
+            --provider "$PROVIDER" \
             --model "$MODEL" \
             --approve \
             >live-evidence/live-e2e.diff 2>live-evidence/live-e2e.log
@@ -100,6 +130,7 @@ jobs:
             --suite evals/suite.json \
             --runs "$RUNS" \
             --output eval-results \
+            --provider "$PROVIDER" \
             --model "$MODEL" \
             --approve
       - name: Validate report identity and run count
@@ -121,7 +152,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: repopilot-live-eval-${{ github.run_id }}
+          name: repopilot-live-eval-${{ inputs.provider }}-${{ github.run_id }}
           path: |
             eval-results/
             live-evidence/
@@ -142,7 +173,7 @@ jobs:
       - name: Download validated reports and evidence
         uses: actions/download-artifact@v8
         with:
-          name: repopilot-live-eval-${{ github.run_id }}
+          name: repopilot-live-eval-${{ inputs.provider }}-${{ github.run_id }}
           path: .
       - name: Publish approved results to main
         shell: bash

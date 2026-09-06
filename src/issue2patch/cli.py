@@ -18,7 +18,9 @@ from issue2patch.evals import (
     write_eval_reports,
 )
 from issue2patch.models import (
+    DEFAULT_DEEPSEEK_MODEL,
     DEFAULT_OPENAI_MODEL,
+    DeepSeekResponsesModelClient,
     ModelClientError,
     OpenAIResponsesModelClient,
 )
@@ -49,7 +51,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--repo", required=True, type=Path, help="target repository root")
     run.add_argument("--issue", required=True, help="issue description")
-    run.add_argument("--model", default=DEFAULT_OPENAI_MODEL)
+    run.add_argument(
+        "--provider",
+        choices=("openai", "deepseek"),
+        default="openai",
+        help="model API provider (default: openai)",
+    )
+    run.add_argument(
+        "--model",
+        help="provider model ID (default depends on --provider)",
+    )
     run.add_argument("--api-timeout", type=float, default=30.0)
     run.add_argument("--api-retries", type=int, default=2)
     run.add_argument("--test-timeout", type=float, default=60.0)
@@ -81,7 +92,16 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument(
         "--output", type=Path, default=Path("eval-results")
     )
-    evaluate.add_argument("--model", default=DEFAULT_OPENAI_MODEL)
+    evaluate.add_argument(
+        "--provider",
+        choices=("openai", "deepseek"),
+        default="openai",
+        help="model API provider (default: openai)",
+    )
+    evaluate.add_argument(
+        "--model",
+        help="provider model ID (default depends on --provider)",
+    )
     evaluate.add_argument("--api-timeout", type=float, default=30.0)
     evaluate.add_argument("--api-retries", type=int, default=2)
     evaluate.add_argument("--test-timeout", type=float, default=60.0)
@@ -115,6 +135,7 @@ def main(
     if args.command not in {"run", "eval"}:
         parser.print_help(error_stream)
         return 2
+    args.model = _resolve_model(args.provider, args.model)
 
     if args.command == "eval":
         try:
@@ -143,11 +164,7 @@ def main(
         model = (
             model_factory(args)
             if model_factory
-            else OpenAIResponsesModelClient(
-                model=args.model,
-                timeout=args.api_timeout,
-                max_retries=args.api_retries,
-            )
+            else _create_model(args)
         )
         config = AgentConfig(
             max_steps=args.max_steps,
@@ -225,11 +242,7 @@ def _run_eval(
         def create_model(task: EvalTask, run_number: int) -> ModelClient:
             if eval_model_factory:
                 return eval_model_factory(task, run_number, args)
-            return OpenAIResponsesModelClient(
-                model=args.model,
-                timeout=args.api_timeout,
-                max_retries=args.api_retries,
-            )
+            return _create_model(args)
 
         def create_test_runner() -> TestRunner:
             return test_runner if test_runner is not None else DockerSandboxRunner()
@@ -289,6 +302,7 @@ def _obtain_approval(
         print(f"  reports: {args.output}", file=stderr)
     else:
         print(f"  repository: {args.repo}", file=stderr)
+    print(f"  provider: {args.provider}", file=stderr)
     print(f"  model: {args.model}", file=stderr)
     print("  tests run in the configured sandbox; model API usage may incur charges", file=stderr)
     print("  only temporary copies may be modified; source repositories stay unchanged", file=stderr)
@@ -302,6 +316,27 @@ def _obtain_approval(
     stderr.flush()
     answer = stdin.readline().strip().lower()
     return answer in {"y", "yes"}
+
+
+def _resolve_model(provider: str, model: str | None) -> str:
+    if model:
+        return model
+    if provider == "deepseek":
+        return DEFAULT_DEEPSEEK_MODEL
+    return DEFAULT_OPENAI_MODEL
+
+
+def _create_model(args: argparse.Namespace) -> ModelClient:
+    client_type = (
+        DeepSeekResponsesModelClient
+        if args.provider == "deepseek"
+        else OpenAIResponsesModelClient
+    )
+    return client_type(
+        model=args.model,
+        timeout=args.api_timeout,
+        max_retries=args.api_retries,
+    )
 
 
 def _progress_printer(stream: TextIO) -> Callable[[AgentProgressEvent], None]:

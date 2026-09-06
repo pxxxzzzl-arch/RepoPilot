@@ -1,5 +1,7 @@
 # RepoPilot
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 > An auditable AI coding agent that turns a failing GitHub-style issue into a reviewable patch without modifying the source repository.
 
 [![CI](https://github.com/pxxxzzzl-arch/RepoPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/pxxxzzzl-arch/RepoPilot/actions/workflows/ci.yml)
@@ -39,16 +41,18 @@ flowchart LR
 
 ## Run it
 
-Prerequisites: Python 3.10+, Docker, a locally built sandbox image, and `OPENAI_API_KEY`.
+Prerequisites: Python 3.10+, Docker, a locally built sandbox image, and a key for the selected provider. DeepSeek is selected explicitly and reads only `DEEPSEEK_API_KEY`:
 
 ```bash
+export DEEPSEEK_API_KEY="your-deepseek-key"
 python -m pip install -e ".[dev]" && \
 docker build -f docker/sandbox.Dockerfile -t issue2patch-sandbox:py311 . && \
 workdir="$(mktemp -d)" && cp -R examples/broken_calculator/. "$workdir/" && \
-issue2patch run --repo "$workdir" --issue "divide should return quotient"
+issue2patch run --provider deepseek --repo "$workdir" \
+  --issue "divide should return quotient"
 ```
 
-The CLI shows the repository, model, execution boundary, and possible API charge before asking for approval. For an explicitly approved non-interactive run, add `--approve`. Progress and usage go to stderr; stdout contains only the diff.
+The DeepSeek default is `deepseek-v4-flash`; override it with `--model`. To use OpenAI instead, export `OPENAI_API_KEY` and pass `--provider openai` (the default provider). The CLI shows the provider, repository, model, execution boundary, and possible API charge before asking for approval. For an explicitly approved non-interactive run, add `--approve`. Progress and usage go to stderr; stdout contains only the diff. Never paste either key into source code, command arguments, issues, or logs.
 
 ## Security boundaries
 
@@ -68,7 +72,8 @@ The local runner is intentionally named `run_tests_trusted`; it is not the defau
 The fixed suite contains 10 deliberately broken Python repositories. Each task runs three times with a fresh model client and working copy. A **repair success** requires all four conditions: Agent status `SUCCESS`, tests pass, the source repository is unchanged, and no file outside the task allowlist is modified.
 
 ```bash
-issue2patch eval --suite evals/suite.json --runs 3 --output eval-results
+issue2patch eval --provider deepseek --suite evals/suite.json \
+  --runs 3 --output eval-results
 ```
 
 ### Latest live result
@@ -76,19 +81,20 @@ issue2patch eval --suite evals/suite.json --runs 3 --output eval-results
 | Model | Tasks × runs | Repair success | Test pass | Unrelated files | Avg tools | Tokens | Time | Cost |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | `gpt-5.6-luna` | 10 × 3 | _Awaiting credentialed run_ | — | — | — | — | — | — |
+| `deepseek-v4-flash` | 10 × 3 | _Awaiting credentialed run_ | — | — | — | — | — | — |
 
 The row is intentionally not populated from mocks. After a real run, the committed [JSON report](eval-results/eval-report.json) is the source of truth and the [Markdown report](eval-results/eval-report.md) is the human-readable view.
 
-The default model and estimator use the published [GPT-5.6 Luna model ID and token prices](https://developers.openai.com/api/docs/models/gpt-5.6-luna); every report records the exact model name and UTC generation time.
+The estimators use the published [GPT-5.6 Luna prices](https://developers.openai.com/api/docs/models/gpt-5.6-luna) or DeepSeek's [current peak/off-peak prices](https://api-docs.deepseek.com/quick_start/pricing/); every report records the exact model name and UTC generation time. Costs remain estimates because providers may change pricing.
 
 ### Evidence available without paid API access
 
 | Check | Result |
 |---|---:|
-| Offline project tests | 91 passed, 5 opt-in integration tests skipped |
+| Offline project tests | 97 passed, 6 opt-in integration tests skipped |
 | Fixed broken tasks | 10/10 fail before repair |
 | Repeated deterministic repair test | 3/3 strict successes |
-| Docker and live Responses API | Must be recorded on a host with Docker and `OPENAI_API_KEY` |
+| Docker and live Responses API | Must be recorded on a host with Docker and a selected provider key |
 
 ## One successful case
 
@@ -118,23 +124,25 @@ Real API smoke tests are paid and opt-in:
 
 ```bash
 ISSUE2PATCH_RUN_LIVE_API=1 pytest tests/test_live_api_smoke.py
+ISSUE2PATCH_RUN_DEEPSEEK_LIVE_API=1 pytest tests/test_deepseek_live_api_smoke.py
 ```
 
 Normal GitHub Actions never provide an API key or enable paid tests. CI covers Python 3.10–3.12, package build/metadata checks, and Docker image construction.
 
 Credentialed evaluation is isolated in the manually dispatched **Live Agent
-Evaluation** workflow. Add `OPENAI_API_KEY` as a repository Actions secret, choose
-the model and run count, then explicitly decide whether successful reports and E2E
-evidence should be committed to `main`. The secret is never accepted as workflow
-input, printed, uploaded, or written to a report; ordinary pushes cannot trigger
-this paid workflow.
+Evaluation** workflow. Under **Settings → Secrets and variables → Actions**, add
+`DEEPSEEK_API_KEY` or `OPENAI_API_KEY` as a repository secret. Choose the matching
+provider, optionally enter a model, and select the run count. The secret is never
+accepted as workflow input, printed, uploaded, or written to a report; ordinary
+pushes cannot trigger this paid workflow. Publishing successful reports still
+requires a separate explicit choice.
 
 ## Project map
 
 | Path | Responsibility |
 |---|---|
 | `src/issue2patch/orchestrator.py` | Temporary-copy Agent state machine and termination reasons |
-| `src/issue2patch/models.py` | Provider-independent protocol and strict OpenAI Responses client |
+| `src/issue2patch/models.py` | Provider-independent protocol plus strict OpenAI/DeepSeek Responses clients |
 | `src/issue2patch/tools.py` | Contained read, fixed-string search, trusted tests, and diff |
 | `src/issue2patch/patching.py` | Validated, hash-guarded, atomic patches |
 | `src/issue2patch/sandbox.py` | Docker command construction, limits, timeout, and cleanup |
@@ -143,7 +151,7 @@ this paid workflow.
 
 ## Scope and known limitations
 
-- The default real client currently targets OpenAI Responses API; the orchestration protocol remains provider-independent.
+- Real clients support OpenAI and DeepSeek Responses APIs; the orchestration protocol and local action validation remain provider-independent.
 - RepoPilot outputs a diff but does not apply it, commit it, push a branch, or create a pull request.
 - Docker substantially reduces risk but is not a guarantee against every container-runtime or kernel vulnerability.
 - The current benchmark contains small, single-file Python repairs. Multi-file and dependency-changing tasks are planned.
