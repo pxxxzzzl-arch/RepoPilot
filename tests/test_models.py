@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -142,6 +143,37 @@ def test_deepseek_uses_its_endpoint_key_and_structured_output(
     assert text_format["type"] == "json_schema"
     assert "strict" not in text_format
     assert text_format["schema"]["type"] == "object"
+    search_schema = text_format["schema"]["properties"]["action"]["anyOf"][0]
+    assert search_schema["properties"]["regex"]["enum"] == [False]
+
+
+def test_model_schema_allows_regex_only_when_context_explicitly_enables_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek-test-only")
+    transport = MockTransport(
+        [
+            _response(
+                {
+                    "type": "search",
+                    "pattern": "divide.*",
+                    "path": ".",
+                    "regex": True,
+                }
+            )
+        ]
+    )
+    client = DeepSeekResponsesModelClient(transport=transport)
+
+    action = client.next_action(replace(_context(), allow_regex_search=True))
+
+    assert action == SearchAction("divide.*", regex=True)
+    payload = transport.calls[0]["payload"]
+    assert isinstance(payload, dict)
+    search_schema = payload["text"]["format"]["schema"]["properties"]["action"][  # type: ignore[index]
+        "anyOf"
+    ][0]
+    assert search_schema["properties"]["regex"] == {"type": "boolean"}
 
 
 @pytest.mark.parametrize(

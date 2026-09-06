@@ -91,7 +91,7 @@ The estimators use the published [GPT-5.6 Luna prices](https://developers.openai
 
 | Check | Result |
 |---|---:|
-| Offline project tests | 97 passed, 6 opt-in integration tests skipped |
+| Offline project tests | 98 passed, 6 opt-in integration tests skipped |
 | Fixed broken tasks | 10/10 fail before repair |
 | Repeated deterministic repair test | 3/3 strict successes |
 | Docker and live Responses API | Must be recorded on a host with Docker and a selected provider key |

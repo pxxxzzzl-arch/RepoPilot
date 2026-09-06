@@ -98,7 +98,7 @@ issue2patch eval --provider deepseek --suite evals/suite.json \
 
 | 检查 | 结果 |
 |---|---:|
-| 离线项目测试 | 97 通过，6 个可选集成测试跳过 |
+| 离线项目测试 | 98 通过，6 个可选集成测试跳过 |
 | 固定故障任务 | 10/10 在修复前失败 |
 | 重复确定性修复测试 | 3/3 严格成功 |
 | Docker 和真实 Responses API | 必须在具有 Docker 和所选供应商密钥的机器上记录 |

@@ -99,11 +99,29 @@ jobs:
           source_before="$(find "$workdir" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)"
 
           set +e
-          docker run --rm --network none --read-only --cap-drop ALL \
-            --security-opt no-new-privileges:true --user 65532:65532 \
-            --mount "type=bind,source=$workdir,target=/workspace,readonly" \
-            --workdir /workspace issue2patch-sandbox:py311 tests \
-            >live-evidence/baseline.stdout 2>live-evidence/baseline.stderr
+          python - "$workdir" <<'PY'
+          import json
+          import sys
+          from dataclasses import asdict
+          from pathlib import Path
+
+          from issue2patch.sandbox import DockerSandboxRunner
+
+          result = DockerSandboxRunner().run_tests(sys.argv[1], "tests", timeout=60)
+          evidence = Path("live-evidence")
+          (evidence / "baseline.stdout").write_text(result.stdout, encoding="utf-8")
+          (evidence / "baseline.stderr").write_text(result.stderr, encoding="utf-8")
+          (evidence / "baseline.json").write_text(
+              json.dumps(asdict(result), indent=2, sort_keys=True), encoding="utf-8"
+          )
+          expected_failure = (
+              not result.success
+              and result.exit_code == 1
+              and not result.timed_out
+              and result.cleanup_status == "removed"
+          )
+          raise SystemExit(0 if expected_failure else 2)
+          PY
           baseline_status=$?
           issue2patch run \
             --repo "$workdir" \
@@ -116,11 +134,11 @@ jobs:
           set -e
 
           source_after="$(find "$workdir" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)"
-          printf '%s\n' "baseline_exit_code=$baseline_status" "agent_exit_code=$agent_status" \
+          printf '%s\n' "baseline_check_exit_code=$baseline_status" "agent_exit_code=$agent_status" \
             "source_unchanged=$([[ \"$source_before\" == \"$source_after\" ]] && echo true || echo false)" \
             >live-evidence/summary.txt
 
-          test "$baseline_status" -ne 0
+          test "$baseline_status" -eq 0
           test "$agent_status" -eq 0
           test -s live-evidence/live-e2e.diff
           test "$source_before" = "$source_after"

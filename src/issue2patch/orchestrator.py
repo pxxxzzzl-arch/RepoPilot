@@ -104,6 +104,7 @@ class AgentContext:
     last_test_passed: bool | None = None
     baseline_test: TestRunSummary | None = None
     latest_test: TestRunSummary | None = None
+    allow_regex_search: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,6 +342,7 @@ class AgentOrchestrator:
                         observations=tuple(observations),
                         last_test_passed=last_test_passed,
                         baseline_test=baseline_test, latest_test=latest_test,
+                        allow_regex_search=self.config.allow_regex_search,
                     )
                     self._emit(AgentProgressEvent(
                         event_type="model",

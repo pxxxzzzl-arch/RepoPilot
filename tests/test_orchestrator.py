@@ -154,6 +154,7 @@ def test_scripted_model_repairs_copy_and_returns_diff_without_changing_original(
     assert result.baseline_test is not None
     assert result.baseline_test.outcome == Outcome.ASSERTION_FAILED
     assert model.contexts[0].baseline_test == result.baseline_test
+    assert model.contexts[0].allow_regex_search is False
     assert model.contexts[0].observations[0].action_type == "BaselineTests"
     assert len(runner.workspaces) == 2
     assert "-    return a * b" in result.diff
@@ -597,12 +598,14 @@ def test_regex_search_can_be_explicitly_enabled(
     broken_repository: tuple[Path, str]
 ) -> None:
     repository, _ = broken_repository
+    model = RecordingModel([SearchAction(r"return\s+a", regex=True), FinishAction()])
 
     result = AgentOrchestrator(
-        ScriptedModel([SearchAction(r"return\s+a", regex=True), FinishAction()]),
+        model,
         config=AgentConfig(allow_regex_search=True),
         test_runner=ContentAwareRunner(forced_success=False),
     ).run(repository)
 
+    assert model.contexts[0].allow_regex_search is True
     assert result.observations[1].success is True
     assert "calculator.py:2" in result.observations[1].output

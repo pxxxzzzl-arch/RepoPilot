@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import socket
@@ -189,7 +190,7 @@ class _ResponsesModelClient:
         text_format: dict[str, object] = {
             "type": "json_schema",
             "name": "issue2patch_action",
-            "schema": _ACTION_SCHEMA,
+            "schema": _action_schema(context.allow_regex_search),
         }
         if self._strict_schema:
             text_format["strict"] = True
@@ -497,7 +498,7 @@ def _estimate_cost(
     ) / 1_000_000
 
 
-_AGENT_INSTRUCTIONS = """You are Issue2Patch's action selector. Return exactly one JSON action matching the schema. You cannot run shell commands. Inspect with fixed-string search and read_file. ReadFileAction observations include metadata.sha256; copy that exact value into PatchOperation.expected_sha256 and never calculate or guess a hash. Apply only exact hash-guarded patches, run tests after changes, and finish only after tests pass. Never request secrets or sensitive files. Do not include reasoning or prose outside the action."""
+_AGENT_INSTRUCTIONS = """You are Issue2Patch's action selector. Return exactly one JSON action matching the schema. You cannot run shell commands. Use fixed-string search unless context.allow_regex_search is true; when it is false, SearchAction.regex must be false. Inspect files with read_file. ReadFileAction observations include metadata.sha256; copy that exact value into PatchOperation.expected_sha256 and never calculate or guess a hash. Apply only exact hash-guarded patches, run tests after changes, and finish only after tests pass. Never request secrets or sensitive files. Do not include reasoning or prose outside the action."""
 
 _OPERATION_SCHEMA = {
     "type": "object",
@@ -574,6 +575,16 @@ _ACTION_SCHEMA = {
     },
     "required": ["action"],
 }
+
+
+def _action_schema(allow_regex_search: bool) -> dict[str, Any]:
+    schema: dict[str, Any] = copy.deepcopy(_ACTION_SCHEMA)
+    if not allow_regex_search:
+        regex_schema = schema["properties"]["action"]["anyOf"][0]["properties"][
+            "regex"
+        ]
+        regex_schema["enum"] = [False]
+    return schema
 
 
 __all__ = [
