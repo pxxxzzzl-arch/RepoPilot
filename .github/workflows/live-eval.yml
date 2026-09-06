@@ -95,6 +95,7 @@ jobs:
           mkdir -p live-evidence
           workdir="$(mktemp -d)"
           cp -R examples/broken_calculator/. "$workdir/"
+          chmod 755 "$workdir"
           source_before="$(find "$workdir" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)"
 
           set +e
@@ -123,7 +124,7 @@ jobs:
           test "$agent_status" -eq 0
           test -s live-evidence/live-e2e.diff
           test "$source_before" = "$source_after"
-          grep -q '^Status: SUCCESS;' live-evidence/live-e2e.log
+          grep -q '^Status: success;' live-evidence/live-e2e.log
       - name: Run the fixed 10-task evaluation suite
         run: |
           issue2patch eval \

@@ -127,6 +127,7 @@ def test_approved_run_streams_progress_and_outputs_only_temporary_diff(
     assert "[baseline] FAIL" in stderr.getvalue()
     assert "action PatchAction" in stderr.getvalue()
     assert "RunTestsAction OK" in stderr.getvalue()
+    assert "Status: success;" in stderr.getvalue()
     assert "Model: requests=" in stderr.getvalue()
     assert (repository / "calculator.py").read_text(encoding="utf-8") == before
     assert trace.exists()
