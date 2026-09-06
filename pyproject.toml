@@ -23,9 +23,6 @@ classifiers = [
 dev = [
     "pytest>=8.0",
 ]
-demo = [
-    "Pillow>=12.0",
-]
 
 [project.scripts]
 issue2patch = "issue2patch.cli:main"
