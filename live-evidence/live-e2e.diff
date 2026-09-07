@@ -1,0 +1,8 @@
+--- a/calculator.py
++++ b/calculator.py
+@@ -3,4 +3,4 @@
+ 
+ def divide(a: float, b: float) -> float:
+     """Return the quotient of two numbers (currently implemented incorrectly)."""
+-    return a * b
++    return a / b

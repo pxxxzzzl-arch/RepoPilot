@@ -1,0 +1,13 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________________ test_divide_returns_quotient _________________________
+
+    def test_divide_returns_quotient() -> None:
+>       assert divide(6, 3) == 2
+E       assert 18 == 2
+E        +  where 18 = divide(6, 3)
+
+tests/test_calculator.py:5: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_calculator.py::test_divide_returns_quotient - assert 18 == 2
+1 failed in 0.01s

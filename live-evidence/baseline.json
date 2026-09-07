@@ -1,0 +1,11 @@
+{
+  "cleanup_status": "removed",
+  "container_name": "issue2patch-76b54adb484333a9f57262f7e84b6dd4",
+  "duration_seconds": 0.941826012999968,
+  "exit_code": 1,
+  "stderr": "",
+  "stdout": "F                                                                        [100%]\n=================================== FAILURES ===================================\n_________________________ test_divide_returns_quotient _________________________\n\n    def test_divide_returns_quotient() -> None:\n>       assert divide(6, 3) == 2\nE       assert 18 == 2\nE        +  where 18 = divide(6, 3)\n\ntests/test_calculator.py:5: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_calculator.py::test_divide_returns_quotient - assert 18 == 2\n1 failed in 0.01s\n",
+  "success": false,
+  "timed_out": false,
+  "tool": "run_tests"
+}

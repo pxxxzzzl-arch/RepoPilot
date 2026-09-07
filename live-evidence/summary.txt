@@ -1,0 +1,3 @@
+baseline_check_exit_code=0
+agent_exit_code=0
+source_unchanged=true
