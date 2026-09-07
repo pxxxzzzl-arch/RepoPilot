@@ -25,17 +25,27 @@ The original repository is verified before return and is never modified. RepoPil
 
 ## Verified live evidence
 
-The first successful live run used DeepSeek and GitHub-hosted Docker on 6 September 2026. It reproduced the broken test, read the target file with its SHA-256, generated a valid patch, passed the isolated tests, returned a one-file diff, and verified that the source copy was unchanged.
+The final Phase 8 run used DeepSeek and GitHub-hosted Docker on 7 September 2026. It reproduced the broken test, read the target file with its SHA-256, generated a valid patch, passed the isolated tests, returned a one-file diff, and verified that the source copy was unchanged.
 
 | Evidence | Result |
 |---|---:|
-| Live end-to-end run | [GitHub Actions #3](https://github.com/pxxxzzzl-arch/RepoPilot/actions/runs/34025422134) — passed |
+| Live end-to-end run | [GitHub Actions #4](https://github.com/pxxxzzzl-arch/RepoPilot/actions/runs/34075024360) — passed |
 | Model | `deepseek-v4-flash` |
 | Agent path | 5 actions, 5 API requests, 0 retries |
-| Usage | 6,390 tokens · 8.377 s · estimated $0.001181 |
+| Usage | 6,318 tokens · 10.948 s · estimated $0.001850 |
 | Output | `calculator.py` only; source repository unchanged |
 
-A 10-task × 1-run qualification benchmark achieved **80% repair success**, **0 unrelated file changes**, **0 timeouts**, and **0 patch conflicts**. Both failures were invalid model output and were rejected before execution. The final 10-task × 3-run report will be published as [JSON](eval-results/eval-report.json) and [Markdown](eval-results/eval-report.md); the report files, not this summary, are the source of truth.
+The same workflow ran the fixed 10-task suite three times per task:
+
+| Final benchmark | Result |
+|---|---:|
+| Repair success / tests passed | **90.0% (27/30)** |
+| Unrelated file changes | **0** |
+| Average tool calls | 4.97 |
+| Tokens / average duration / estimated cost | 196,228 / 10.525 s / $0.064892 |
+| Timeouts / patch conflicts / security blocks | 0 / 1 / 2 |
+
+See the committed [JSON](eval-results/eval-report.json), [Markdown report](eval-results/eval-report.md), and [live evidence](live-evidence/). These generated artifacts are the source of truth for the figures above.
 
 ## Run the broken example
 
@@ -97,7 +107,7 @@ issue2patch eval --provider deepseek --suite evals/suite.json \
   --runs 3 --output eval-results
 ```
 
-The qualification run exposed two useful failure modes: one response contained more than one action field, and another was not valid JSON. Both ended as `invalid_action`; neither response was executed. These failures are retained in the report rather than hidden from the success rate.
+The final run retained all three failures: `normalize` produced an `old_content` mismatch and ended as `patch_conflict`; `mean` and `unique_order` returned invalid JSON and ended as `invalid_action`. None changed the source repository. These cases point to two concrete improvements: retry after a fresh read on patch conflicts, and one bounded JSON-repair retry before rejecting malformed output.
 
 ## Current scope
 

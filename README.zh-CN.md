@@ -25,17 +25,27 @@
 
 ## 已验证的真实运行
 
-2026 年 9 月 6 日，项目第一次使用 DeepSeek 和 GitHub 托管的 Docker 完成真实端到端验证：故障测试先失败，模型读取目标文件及其 SHA-256，生成合法补丁，隔离测试随后通过，最终只输出一个文件的 Diff，并确认源仓库保持不变。
+2026 年 9 月 7 日，第八阶段最终验收使用 DeepSeek 和 GitHub 托管的 Docker 完成真实端到端运行：故障测试先失败，模型读取目标文件及其 SHA-256，生成合法补丁，隔离测试随后通过，最终只输出一个文件的 Diff，并确认源仓库保持不变。
 
 | 证据 | 结果 |
 |---|---:|
-| 真实端到端运行 | [GitHub Actions #3](https://github.com/pxxxzzzl-arch/RepoPilot/actions/runs/34025422134) — 通过 |
+| 真实端到端运行 | [GitHub Actions #4](https://github.com/pxxxzzzl-arch/RepoPilot/actions/runs/34075024360) — 通过 |
 | 模型 | `deepseek-v4-flash` |
 | Agent 路径 | 5 个动作，5 次 API 请求，0 次重试 |
-| 用量 | 6,390 Token · 8.377 秒 · 估算 $0.001181 |
+| 用量 | 6,318 Token · 10.948 秒 · 估算 $0.001850 |
 | 输出 | 仅修改 `calculator.py`；原始仓库不变 |
 
-10 个任务各运行 1 次的资格评测得到 **80% 修复成功率**、**0 个非相关文件修改**、**0 次超时**和 **0 次补丁冲突**。两次失败都是非法模型输出，并在执行前被拒绝。最终 10 个任务 × 3 次的报告会发布为 [JSON](eval-results/eval-report.json) 和 [Markdown](eval-results/eval-report.md)；报告文件是事实来源，本页只做摘要。
+同一工作流还对 10 个固定任务各运行了 3 次：
+
+| 最终评测 | 结果 |
+|---|---:|
+| 修复成功率 / 测试通过率 | **90.0% (27/30)** |
+| 非相关文件修改 | **0** |
+| 平均工具调用数 | 4.97 |
+| Token / 平均耗时 / 估算费用 | 196,228 / 10.525 秒 / $0.064892 |
+| 超时 / 补丁冲突 / 安全拦截 | 0 / 1 / 2 |
+
+查看已提交的 [JSON](eval-results/eval-report.json)、[Markdown 报告](eval-results/eval-report.md)和[真实运行证据](live-evidence/)。以上数字以这些自动生成的产物为准。
 
 ## 运行故障样例
 
@@ -97,7 +107,7 @@ issue2patch eval --provider deepseek --suite evals/suite.json \
   --runs 3 --output eval-results
 ```
 
-资格评测暴露了两个真实失败：一个响应同时包含多个动作字段，另一个响应不是合法 JSON。两者都以 `invalid_action` 终止，没有执行模型输出。报告会保留这些失败，不会为了美化成功率而删除。
+最终报告保留了全部 3 次失败：`normalize` 的 `old_content` 不匹配，以 `patch_conflict` 终止；`mean` 和 `unique_order` 返回非法 JSON，以 `invalid_action` 终止。它们都没有改动原始仓库。两个明确的后续改进是：补丁冲突时重新读取再重试，以及拒绝非法输出前允许一次有上限的 JSON 修复重试。
 
 ## 当前范围
 
